@@ -7,20 +7,12 @@ import math
 from datetime import datetime
 import hashlib
 import requests
-from requests.api import head
-import csv
 import pandas as pd
-import numpy as np
-import matplotlib.pyplot as plt
-import seaborn as sns
 import itertools
-import string
-from sklearn.linear_model import LinearRegression
-from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import OrdinalEncoder
 from sklearn.neighbors import KNeighborsClassifier
-from sklearn.tree import DecisionTreeClassifier
-from sklearn.ensemble import RandomForestClassifier
+from sklearn.model_selection import train_test_split
+from sqlalchemy import null, true
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = 'super secret key'
@@ -78,6 +70,19 @@ class cropdetails(db.Model):
     Details=db.Column(db.String(500), nullable=False)
     ImgName=db.Column(db.String(30), nullable=False)
          
+class graphd(db.Model):
+    Sno=db.Column(db.Integer, primary_key=True)
+    Crop=db.Column(db.String(20), nullable=False)
+    p2006_7=db.Column(db.String(10), nullable=False)
+    p2007_8=db.Column(db.String(10), nullable=False)
+    p2008_9=db.Column(db.String(10), nullable=False)
+    p2009_10=db.Column(db.String(10), nullable=False)
+    p2010_11=db.Column(db.String(10), nullable=False)
+    y2006_7=db.Column(db.String(10), nullable=False)
+    y2007_8=db.Column(db.String(10), nullable=False)
+    y2008_9=db.Column(db.String(10), nullable=False)
+    y2009_10=db.Column(db.String(10), nullable=False)
+    y2010_11=db.Column(db.String(10), nullable=False)
 
 @app.route("/admin/",methods=["GET","POST"])
 def adminlogin():
@@ -303,35 +308,24 @@ def login():
             return redirect("/")
         
         p = hashlib.md5(password.encode())
-        lo=registration.query.all()
-        e=0
-        s=0
-        for i in lo:
-            if email==i.email:
-                e=1
-                if i.status=="Blocked":
-                    s=1
-                    break
-                if p.hexdigest()==i.password:
-                # em=i.email
-                # pa=i.password
-                  session['email']=email
-                  session['logo']=(i.fname[0:1]+i.lname[0:1]).upper()
-                  session['role']=i.role
-                  break
-        # if em=="" and pa="":
-        if 'email' in session:
-            return redirect("/home")
-        else:
-            if e==1:  
-              if s==1:
-                  flash(i.email+" is blocked by our admin!!","warning")
-              else:
-                   flash("Invalid Email or Password","warning")
-            else:
-              flash("You may have not signed up!!","warning")
-            return redirect("/")
 
+        lo=registration.query.filter_by(email=email).first()
+
+        if lo is None:
+            flash("You may have not signed up!!")
+            return redirect("/")
+        elif lo.status=="Blocked":
+                flash(lo.email+" is blocked by our admin!!")
+                return redirect("/")
+        elif lo.password!=p.hexdigest():
+            flash("Invalid Password entered")
+            return redirect("/")
+        else:
+            session['email']=lo.email
+            session['logo']=(lo.fname[0:1]+lo.lname[0:1]).upper()
+            session['role']=lo.role
+            return redirect("/home")
+            
     return render_template("login.html")
 
 @app.route("/signup",methods=["GET","POST"])
@@ -349,9 +343,18 @@ def signup():
         phone=request.form['phone']
         email=request.form['email']
         password=request.form['password']
+        conpassword=request.form['conpassword']
+
+        c=registration.query.filter_by(email=email).first()
+        if c is not None:
+            flash("Email already register")
+            return redirect("/signup")
         
-        if fname=="" or lname=="" or len(phone)!=10 or email=="" or password=="":
-            flash("Please fill all the feilds and phone number should be of 10 digits","warning")
+        elif password!=conpassword:
+            flash("New and Confirm password are not matched")
+            return redirect("/signup")
+        elif len(phone)!=10:
+            flash("Invalid phone number")
             return redirect("/signup")
         else:
             p = hashlib.md5(password.encode())
@@ -365,16 +368,9 @@ def signup():
 
 @app.route("/logout")
 def logout():
-    # global em,pa
-    # em=""
-    # pa=""
-    # r=session['role']
     session.pop('email')
     session.pop('logo')
     session.pop('role')
-    # if r=="Admin":
-    #    return redirect("/admin/")
-    # else:
 
     return redirect("/")
 
@@ -431,7 +427,7 @@ def profileupdate():
         redirect("/")
 
 @app.route("/home")
-def hello_world():
+def home():
     # if em !="" and pa !="":
     if 'email' in session:
         return render_template("home.html",se=session['logo'])
@@ -446,42 +442,39 @@ def currentwea():
         co=""
         if request.method=='POST':
             c=request.form['city']
-            if c=="":
-                return render_template("currentwea.html",l={'0':0},se=session['logo'],c='red')
-            else:
-               url="https://api.openweathermap.org/data/2.5/weather?appid=850789bc308ec795c19f9f4df7ed367d&q="+c
+            url="https://api.openweathermap.org/data/2.5/weather?appid=850789bc308ec795c19f9f4df7ed367d&q="+c
                
-               d=requests.get(url).json()
-               l=dict(d)
-               if l['cod']!='404':
-                    t=time.strftime('%H:%M:%S', time.gmtime(l['dt']-l['timezone']))
-                    l['dth']=t
-                    l['main']['temp']=round(l['main']['temp']-273.15,2)
+            d=requests.get(url).json()
+            l=dict(d)
+            if l['cod']!='404':
+                t=time.strftime('%H:%M:%S', time.gmtime(l['dt']-l['timezone']))
+                l['dth']=t
+                l['main']['temp']=round(l['main']['temp']-273.15,2)
 
-                    we=weather(Email=session['email'],City=l['name'],Longitude=l['coord']['lon'],Latitude=l['coord']['lon'],Weather=l['weather'][0]['main'],Temperature=(l['main']['temp']-273.15),Feels_Like=(l['main']['feels_like']-273.15),Pressure=l['main']['pressure'],Humidity=l['main']['humidity'],Wind=l['wind']['speed'],Time=datetime.now().strftime("%d/%m/%Y %H:%M:%S"))
-                    db.session.add(we)
-                    db.session.commit()
+                we=weather(Email=session['email'],City=l['name'],Longitude=l['coord']['lon'],Latitude=l['coord']['lon'],Weather=l['weather'][0]['main'],Temperature=(l['main']['temp']-273.15),Feels_Like=(l['main']['feels_like']-273.15),Pressure=l['main']['pressure'],Humidity=l['main']['humidity'],Wind=l['wind']['speed'],Time=datetime.now().strftime("%d/%m/%Y %H:%M:%S"))
+                db.session.add(we)
+                db.session.commit()
                     
-                    if l['weather'][0]['main']=="Clear":
-                        im="Clear Sky.jpeg"
-                        co="black"
-                    elif l['weather'][0]['main']=="Snow" or l['weather'][0]['main']=="Winter":
-                        im="Winter.jpeg"
-                        co="black"
-                    elif l['weather'][0]['main']=="Sunny":
-                        im="Sunny.jpeg"
-                        co="black"
-                    elif l['weather'][0]['main']=="Cloudy" or l['weather'][0]['main']=="Smoke" or l['weather'][0]['main']=="Clouds":
-                        im="Cloudy.jpeg"
-                        co="white"
-                    elif l['weather'][0]['main']=="Rainy":
-                        im="Rainy.jpeg"
-                        co="white"
-                    else:
-                        im="General.jpeg"
-                        co="white"
+                if l['weather'][0]['main']=="Clear":
+                    im="Clear Sky.jpeg"
+                    co="black"
+                elif l['weather'][0]['main']=="Snow" or l['weather'][0]['main']=="Winter":
+                    im="Winter.jpeg"
+                    co="black"
+                elif l['weather'][0]['main']=="Sunny":
+                    im="Sunny.jpeg"
+                    co="black"
+                elif l['weather'][0]['main']=="Cloudy" or l['weather'][0]['main']=="Smoke" or l['weather'][0]['main']=="Clouds":
+                    im="Cloudy.jpeg"
+                    co="white"
+                elif l['weather'][0]['main']=="Rainy":
+                    im="Rainy.jpeg"
+                    co="white"
+                else:
+                    im="General.jpeg"
+                    co="white"
 
-               return render_template("currentwea.html",l=l,se=session['logo'],im=im,co=co)
+            return render_template("currentwea.html",l=l,se=session['logo'],im=im,co=co)
 
         return render_template("currentwea.html",l={'0':0},se=session['logo'],c='black')
     else:
@@ -539,25 +532,23 @@ def forecast():
     
         if request.method=='POST':
             c=request.form['city']
-            if c=="":
-                return render_template("forecast.html",l={'0':0},se=session['logo'],c='red')
-            else:
-                url="https://api.weatherbit.io/v2.0/forecast/daily?city="+c+"&key=a6a52896bb4b4e5db0316789bb323bd2"
-                data=requests.get(url).json()
+            
+            url="https://api.weatherbit.io/v2.0/forecast/daily?city="+c+"&key=a6a52896bb4b4e5db0316789bb323bd2"
+            data=requests.get(url).json()
 
-                d=list()
+            d=list()
 
-                for i in range(0,len(data['data'])):
-                        t=list()
-                        t.append(data['data'][i]['temp'])
-                        t.append(data['data'][i]['pres'])
-                        t.append(data['data'][i]['rh'])
-                        t.append(data['data'][i]['wind_spd'])
-                        t.append(data['data'][i]['valid_date'])
-                        d.append(t)
+            for i in range(0,len(data['data'])):
+                    t=list()
+                    t.append(data['data'][i]['temp'])
+                    t.append(data['data'][i]['pres'])
+                    t.append(data['data'][i]['rh'])
+                    t.append(data['data'][i]['wind_spd'])
+                    t.append(data['data'][i]['valid_date'])
+                    d.append(t)
                     
                 
-                return render_template("forecast.html",se=session['logo'],l=data,d=d)
+            return render_template("forecast.html",se=session['logo'],l=data,d=d)
         return render_template("forecast.html",l={'0':0},se=session['logo'],c='black')
     else:
         return redirect("/")
@@ -565,11 +556,9 @@ def forecast():
 @app.route("/crop",methods=['GET','POST'])
 def crop():
     if 'email' in session:
-        return render_template("crop.html",l={'0':0},se=session['logo'],c='black')
+        return render_template("crop.html",l={'cod':0},se=session['logo'],c='black')
     else:
         return redirect("/")
-    
-
 
 @app.route("/cropprediction",methods=['GET','POST'])
 def cropprediction():
@@ -579,55 +568,109 @@ def cropprediction():
         co=""
         if request.method=='POST':
             c=request.form['city']
-            if c=="":
-                return render_template("crop.html",l={'0':0},se=session['logo'],c='red')
-            else:
+            n=request.form['Nitrogen']
+            p=request.form['Phosphorus']
+            k=request.form['Potassium']
+            ph=request.form['PH Level']
             
-                url = "https://api.openweathermap.org/data/2.5/forecast?q="+c+"&exclude=minutely,hourly&appid=850789bc308ec795c19f9f4df7ed367d"
+            a=dict()
+            a['cod']=0
+            
+            if 0>float(n) or float(n)>150:
+                flash("Value of Nitrogen must be in between 0 to 150 !!","warning")
+                return render_template("crop.html",se=session['logo'],l=a)
+            elif 5>float(p) or float(p)>250:
+                flash("Value of Phosphorus must be in between 5 to 250 !!","warning")
+                return render_template("crop.html",se=session['logo'],l=a)
+            elif 5>float(k) or float(k)>220:
+                flash("Value of Potassium must be in between 5 to 220 !!","warning")
+                return render_template("crop.html",se=session['logo'],l=a)
+            elif 0>float(ph) or float(ph)>14:
+                flash("Value of PH must be in between 0 to 14 !!","warning")
+                return render_template("crop.html",se=session['logo'],l=a)
+
+            url = "https://api.openweathermap.org/data/2.5/forecast?q="+c+"&exclude=minutely,hourly&appid=850789bc308ec795c19f9f4df7ed367d"
                 
-                d=requests.get(url).json()
-                myjson=dict(d)
-                            
-                temperature = []
-                feelslike = []
-                temp_min = []
-                temp_max = []
-                humidity = []
-                weather = []
-                rainfall = [] 
-                for i in range(0,len(myjson['list'])):
-                    temperature.append(round(myjson['list'][i]['main']['temp']-273.2))
-                    humidity.append(myjson['list'][i]['main']['humidity'])
-                    if "rain" not in myjson['list'][i]:
-                        rainfall.append(0)
-                    else:
-                        rainfall.append(round(myjson['list'][i]['rain']['3h']))    
-
-                temp = sum(temperature)/len(temperature) 
-                humi = sum(humidity)/len(humidity)
-                rainf = sum(rainfall)/len(rainfall)
-
-                data = pd.read_csv("Crop_recommendation.csv")
-                ord_enc = OrdinalEncoder()
-
-                data["label_code"] = ord_enc.fit_transform(data[["label"]])
-
-                features = data[['temperature','humidity','rainfall']]
-
-                label = data['label_code']
-
-                clf = KNeighborsClassifier()
-                clf.fit(features.values,label)
-
-                preds = clf.predict([[temp,humi,rainf]])
-                rev = ord_enc.inverse_transform([preds])
-                res = list(itertools.chain(*rev))
-                a = " ".join(map(str, res))
-                cro=cropdetails.query.filter_by(Crop=a).first()
-                cro.Crop=cro.Crop[:1].upper()+cro.Crop[1:]
+            d=requests.get(url).json()
+            myjson=dict(d)
                 
+            if d['cod']=='404':
+                return render_template("crop.html",se=session['logo'],l=d)
+               
 
-                return render_template("cropprediction.html",se=session['logo'],cro=cro)
+            temperature = []
+            humidity = []
+            rainfall = [] 
+            for i in range(0,len(myjson['list'])):
+                temperature.append(round(myjson['list'][i]['main']['temp']-273.2))
+                humidity.append(myjson['list'][i]['main']['humidity'])
+                if "rain" not in myjson['list'][i]:
+                    rainfall.append(0)
+                else:
+                    rainfall.append(round(myjson['list'][i]['rain']['3h']))    
+
+            temp = sum(temperature)/len(temperature) 
+            humi = sum(humidity)/len(humidity)
+            rainf = sum(rainfall)/len(rainfall)
+            data = pd.read_csv("Crop_recommendation.csv")
+            ord_enc = OrdinalEncoder()
+            data["label_code"] = ord_enc.fit_transform(data[["label"]])
+            label = data['label_code']
+            data.drop(data.columns[7],axis=1,inplace = True)
+            data1 = data.values
+
+            X,y = data1[:, :-1], label
+            X_train, X_test, y_train, y_test = train_test_split(X, y,test_size=0.33,random_state=1)
+            # print(X_train.shape, X_train.shape, y_train.shape, y_test.shape)
+            model  = KNeighborsClassifier()
+
+            model.fit(X_train, y_train)
+
+            preds = model.predict([[n,p,k,temp,humi,ph,rainf]])
+
+            print(*preds)
+            rev = ord_enc.inverse_transform([preds])
+            print(*rev)
+
+            res = list(itertools.chain(*rev))
+            a = " ".join(map(str, res))
+
+
+            cro=cropdetails.query.filter_by(Crop=a).first()
+            cro.Crop=cro.Crop[:1].upper()+cro.Crop[1:]
+            
+            ye=list()
+            py=list()
+            yy=list()
+            
+            gr=graphd.query.filter_by(Crop='Rice').first()
+            
+            for i in range(6,11):
+                if i<9:
+                  s='200'+str(i)+'-0'+str((i+1))
+                elif i==9:
+                  s='200'+str(i)+'-'+str((i+1))
+                else:
+                  s='20'+str(i)+'-'+str((i+1))
+                ye.append(s)
+
+            py.append(gr.p2006_7)
+            py.append(gr.p2007_8)
+            py.append(gr.p2008_9)
+            py.append(gr.p2009_10)
+            py.append(gr.p2010_11)
+
+            yy.append(gr.y2006_7)
+            yy.append(gr.y2007_8)
+            yy.append(gr.y2008_9)
+            yy.append(gr.y2009_10)
+            yy.append(gr.y2010_11)
+
+            ye=json.dumps(ye)
+            py=json.dumps(py)
+            yy=json.dumps(yy)
+
+            return render_template("cropprediction.html",se=session['logo'],cro=cro,py=py,yy=yy,ye=ye)
 
         return render_template("crop.html",l={'0':0},se=session['logo'])
     else:
@@ -640,15 +683,12 @@ def about():
     if 'email' in session:
         if request.method=='POST':
             f=request.form['feedback']
-            if f=="":
-                flash("Please enter your feedback","warning")
-                return redirect("/AboutUs")
-            else:
-                feedb=feedback(Email=session['email'],Feedb=f,Time=datetime.now().strftime("%d/%m/%Y %H:%M:%S"))
-                db.session.add(feedb)
-                db.session.commit()
-                flash("Your feedback is successfully send ","success")
-                return redirect("/AboutUs")
+            
+            feedb=feedback(Email=session['email'],Feedb=f,Time=datetime.now().strftime("%d/%m/%Y %H:%M:%S"))
+            db.session.add(feedb)
+            db.session.commit()
+            flash("Your feedback is successfully send ","success")
+            return redirect("/AboutUs")
 
         return render_template("about.html",se=session['logo'])
     else:
@@ -723,21 +763,20 @@ def contact():
             phone=request.form['phone']
             email=request.form['email']
             msg=request.form['feedb']
-            if msg=="":
-                flash("Please enter your","warning")
-                redirect("/ContactUs")
-            else:
-                con=ContactUs(fname=fname,lname=lname,gender=gender,phone=phone,email=email,msg=msg,response='Null')
-                db.session.add(con)
-                db.session.commit()
-                flash("Your Message is send successfully","success")
-                return redirect("/ContactUs")
+            
+            con=ContactUs(fname=fname,lname=lname,gender=gender,phone=phone,email=email,msg=msg,response='Null')
+            db.session.add(con)
+            db.session.commit()
+            flash("Your Message is send successfully","success")
+            return redirect("/ContactUs")
         
         lo=registration.query.filter_by(email=session['email']).first()
         return render_template("contact.html",lo=lo,se=session['logo'])
  
     else:
         return redirect("/")
+
+
 
 # contactus curd operations
 
